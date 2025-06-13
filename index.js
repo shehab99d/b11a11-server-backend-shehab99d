@@ -114,6 +114,43 @@ async function run() {
             res.send(result);
         });
 
+        app.get('/my-uploaded-courses', verifyToken, async (req, res) => {
+            const email = req.query.email;
+
+            console.log("👉 Email received from frontend:", email);
+
+            if (req.user.email !== email) {
+                return res.status(403).send({ message: 'Forbidden access' });
+            }
+
+            // const userCourses = await courseCollection.find({ email }).toArray();
+            const userCourses = await courseCollection.find({ instructorEmail: email }).toArray();
+            res.send(userCourses);
+        });
+
+
+        app.get('/courses-manage/:id', verifyToken, async (req, res) => {
+            try {
+                const id = req.params.id;
+                const userEmail = req.user.email;
+
+                const course = await courseCollection.findOne({ _id: new ObjectId(id) });
+
+                if (!course) {
+                    return res.status(403).send({ message: 'course not found' });
+                }
+
+                if (course.email !== userEmail) {
+                    return res.status(403).send({ message: 'Access denied: You are not the creator of this course.' })
+                }
+
+                res.send(course);
+            } catch (error) {
+                console.error("Error getting course:", error);
+                res.status(500).send({ message: 'Server error', error });
+            }
+        })
+
         app.put('/courses/:id', async (req, res) => {
             const id = req.params.id;
             const updatedCourse = req.body;
@@ -143,7 +180,7 @@ async function run() {
             res.send(result);
         })
 
-        // ===== ✅ My Created Courses (Protected) =====
+        // =====  My Created Courses (Protected) =====
         app.get('/my-courses', verifyToken, async (req, res) => {
             const email = req.query.email;
             if (req.user.email !== email) {
@@ -153,31 +190,51 @@ async function run() {
             res.send(result);
         });
 
+        app.get('/most-enrolled', async (req, res) => {
+            try {
+                const mostEnrolledCourses = await courseCollection
+                    .find()
+                    .sort({ enrollCount: -1 })
+                    .limit(6)
+                    .toArray();
+
+                res.send(mostEnrolledCourses);
+            } catch (error) {
+                res.status(500).send({ message: "Failed to fetch", error });
+            }
+        });
+
+
         // ===== Enroll to Course =====
         app.post('/enroll', async (req, res) => {
             try {
                 const { email, courseId, title, image } = req.body;
 
+                // Check if already enrolled
                 const alreadyEnrolled = await enrollmentsCollection.findOne({ email, courseId });
                 if (alreadyEnrolled) {
                     return res.status(400).send({ success: false, message: 'You are already enrolled in this course.' });
                 }
 
+                // Check user limit
                 const activeEnrollmentsCount = await enrollmentsCollection.countDocuments({ email });
                 if (activeEnrollmentsCount >= 3) {
                     return res.status(400).send({ success: false, message: 'You can only enroll in up to 3 courses at a time.' });
                 }
 
+                // Find course
                 const course = await courseCollection.findOne({ _id: new ObjectId(courseId) });
                 if (!course) {
                     return res.status(404).send({ success: false, message: 'Course not found.' });
                 }
 
+                // Check seat availability
                 const currentEnrollCount = await enrollmentsCollection.countDocuments({ courseId });
                 if (currentEnrollCount >= course.seats) {
                     return res.status(400).send({ success: false, message: 'No seats left in this course.' });
                 }
 
+                // Enroll
                 const enrollmentData = {
                     email,
                     courseId,
@@ -188,7 +245,13 @@ async function run() {
 
                 const result = await enrollmentsCollection.insertOne(enrollmentData);
 
+
                 if (result.insertedId) {
+                    await courseCollection.updateOne(
+                        { _id: new ObjectId(courseId) },
+                        { $inc: { enrollCount: 1 } }
+                    );
+
                     return res.send({ success: true, insertedId: result.insertedId });
                 } else {
                     return res.status(500).send({ success: false, message: 'Failed to enroll.' });
@@ -198,6 +261,7 @@ async function run() {
                 res.status(500).send({ success: false, message: 'Server error', error: error.message });
             }
         });
+
 
         app.get('/courses/:id/seats-left', async (req, res) => {
             try {
@@ -226,5 +290,5 @@ async function run() {
 // ===== Start Server =====
 run().catch(console.dir);
 app.listen(port, () => {
-    console.log(`🚀 Server is running on port ${port}`);
+    console.log(` Server is running on port ${port}`);
 });
