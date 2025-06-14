@@ -168,6 +168,38 @@ async function run() {
             res.send(result);
         });
 
+        app.delete('/unenroll', async (req, res) => {
+            const { email, courseId } = req.body;
+
+            if (!email || !courseId) {
+                return res.status(403).send({ message: "Forbidden Access" });
+            }
+
+            const result = await enrollmentsCollection.deleteOne({
+                email: email,
+                courseId: courseId
+            });
+
+            if (result.deletedCount > 0) {
+                return res.send({ success: 'true', message: "unenrolled successfully" })
+            } else {
+                return res.status(403).send({ success: 'false', message: 'Unenroll not found' })
+            }
+        });
+
+        app.get('/enroll-check', async (req, res) => {
+            const { email, courseId } = req.query;
+
+            if (!email || !courseId) {
+                return res.status(400).send({ enrolled: false, message: 'Invalid query' });
+            }
+
+            const exists = await enrollmentsCollection.findOne({ email, courseId });
+
+            res.send({ enrolled: !!exists });
+        });
+
+
         app.delete('/courses/:id', async (req, res) => {
             const id = req.params.id;
             const result = await courseCollection.deleteOne({ _id: new ObjectId(id) });
