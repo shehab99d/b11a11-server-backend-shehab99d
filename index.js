@@ -9,11 +9,7 @@ const port = process.env.PORT || 5000;
 
 // ===== Middleware =====
 app.use(cors({
-    origin: [
-      'http://localhost:5173',
-      'https://course-management-a94ea.web.app',
-      'https://course-management-server.vercel.app'
-    ],
+    origin: '*',
     credentials: true
 }));
 app.use(express.json());
