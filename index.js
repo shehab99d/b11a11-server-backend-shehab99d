@@ -408,7 +408,14 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 // ===== Middleware =====
-app.use(cors({ origin: '*', credentials: true }));
+app.use(cors({
+    origin: [
+        'http://localhost:5173',       // development
+        'https://course-management-a94ea.web.app'  // deployed frontend URL
+    ],
+    credentials: true
+}));
+
 app.use(express.json());
 
 // ===== MongoDB Setup =====
@@ -460,17 +467,39 @@ async function run() {
         });
 
         // ===== Course Routes =====
-        app.get("/courses", async (req, res) => {
-            const result = await courseCollection.find().toArray();
-            res.send(result);
+        app.get('/courses', async (req, res) => {
+            const courses = await courseCollection.find().toArray();
+            res.send(courses);
         });
 
-        app.post("/courses", async (req, res) => {
-            const course = req.body;
-            course.seats = parseInt(course.seats) || 10;
-            course.createdAt = new Date();
-            const result = await courseCollection.insertOne(course);
-            res.send({ insertedId: result.insertedId });
+        // app.post("/courses", async (req, res) => {
+        //     const course = req.body;
+        //     course.seats = parseInt(course.seats) || 10;
+        //     course.createdAt = new Date();
+        //     const result = await courseCollection.insertOne(course);
+        //     res.send({ insertedId: result.insertedId });
+        //     console.log("Course added:", result.insertedId);
+
+        // });
+
+        app.post('/courses', async (req, res) => {
+            try {
+                const course = req.body;
+                course.seats = parseInt(course.seats) || 10;
+                course.createdAt = new Date();
+
+                const result = await courseCollection.insertOne(course);
+
+                if (result.insertedId) {
+                    console.log('Course added:', result.insertedId);
+                    res.status(201).send({ insertedId: result.insertedId });
+                } else {
+                    res.status(500).send({ message: 'Failed to add course' });
+                }
+            } catch (error) {
+                console.error('Add course error:', error);
+                res.status(500).send({ message: 'Server error adding course' });
+            }
         });
 
         app.get("/courses/:id", async (req, res) => {
@@ -544,7 +573,9 @@ async function run() {
                 { $inc: { enrollCount: 1 } }
             );
 
-            res.send({ insertedId: result.insertedId });
+            // res.send({ insertedId: result.insertedId });
+            res.status(200).send({ success: true, insertedId: result.insertedId });
+
         });
 
         app.get("/enroll-check", async (req, res) => {
@@ -561,11 +592,63 @@ async function run() {
             res.send(result);
         });
 
-        app.delete("/unenroll", async (req, res) => {
-            const { email, courseId } = req.body;
-            const result = await enrollmentsCollection.deleteOne({ email, courseId });
-            res.send(result);
+
+        // POST /unenroll  or DELETE /unenroll (body: { email, courseId })
+        app.delete('/unenroll/:id', verifyToken, async (req, res) => {
+            try {
+                const id = req.params.id;
+                if (!ObjectId.isValid(id)) return res.status(400).send({ success: false, message: "Invalid enrollment ID" });
+
+                // Find the enrollment to check ownership
+                const enrollment = await enrollmentsCollection.findOne({ _id: new ObjectId(id) });
+                if (!enrollment) return res.status(404).send({ success: false, message: "Enrollment not found" });
+
+                // Check if the user owns this enrollment
+                if (enrollment.email !== req.user.email) {
+                    return res.status(403).send({ success: false, message: "Forbidden: You cannot unenroll this enrollment" });
+                }
+
+                // Delete enrollment
+                const result = await enrollmentsCollection.deleteOne({ _id: new ObjectId(id) });
+
+                if (result.deletedCount > 0) {
+                    // Decrease enrollCount in course
+                    await courseCollection.updateOne(
+                        { _id: new ObjectId(enrollment.courseId) },
+                        { $inc: { enrollCount: -1 } }
+                    );
+
+                    return res.send({ success: true, message: "Unenrolled successfully" });
+                } else {
+                    return res.status(404).send({ success: false, message: "Enrollment not found" });
+                }
+            } catch (error) {
+                console.error("Unenroll error:", error);
+                res.status(500).send({ success: false, message: "Server error" });
+            }
         });
+
+        app.delete("/unenroll/:id", async (req, res) => {
+            try {
+                const { email, courseId } = req.body;
+
+                if (!email || !courseId) {
+                    return res.status(400).send({ success: false, message: "Missing email or courseId" });
+                }
+
+                const result = await enrollmentsCollection.deleteOne({ email, courseId });
+
+                if (result.deletedCount > 0) {
+                    return res.send({ success: true });
+                } else {
+                    return res.status(404).send({ success: false, message: "Enrollment not found" });
+                }
+            } catch (error) {
+                console.error("Unenroll error:", error);
+                res.status(500).send({ success: false, message: "Server error" });
+            }
+        });
+
 
         app.delete("/delete-enrollment/:id", async (req, res) => {
             const id = req.params.id;
