@@ -526,12 +526,12 @@ async function run() {
         });
 
         app.get("/latest-courses", async (req, res) => {
-            const latest = await courseCollection.find().sort({ createdAt: -1 }).limit(6).toArray();
+            const latest = await courseCollection.find().sort({ createdAt: -1 }).limit(8).toArray();
             res.send(latest);
         });
 
         app.get("/most-enrolled", async (req, res) => {
-            const topCourses = await courseCollection.find().sort({ enrollCount: -1 }).limit(6).toArray();
+            const topCourses = await courseCollection.find().sort({ enrollCount: -1 }).limit(8).toArray();
             res.send(topCourses);
         });
 
